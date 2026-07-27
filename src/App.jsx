@@ -299,16 +299,19 @@ export default function KaraokeApp() {
           font-weight: 600;
           font-size: 14.5px;
           color: var(--text);
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
+          white-space: normal;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          line-height: 1.35;
         }
         .kb-series {
           font-size: 12.5px;
           color: var(--muted);
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
+          white-space: normal;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          line-height: 1.3;
+          margin-top: 2px;
         }
 
         .kb-actions {
@@ -598,20 +601,19 @@ export default function KaraokeApp() {
                       )}
                       {song.lyricsLink && (
                         <a
-                          className="kb-add-btn"
+                          className="kb-icon-btn"
                           href={song.lyricsLink}
                           target="_blank"
                           rel="noopener noreferrer"
-                          style={{ display: "inline-flex", alignItems: "center", textDecoration: "none" }}
                           title="Open lyrics"
                         >
-                          <FileText size={14} style={{ marginRight: 6 }} />
-                          Lyrics
+                          <FileText size={15} strokeWidth={1.75}/>
                         </a>
                       )}
                       <button
                         className={`kb-add-btn ${inQueue ? "active" : ""}`}
                         onClick={() => toggleQueue(song)}
+                        style={{ display: "none" }}
                       >
                         {inQueue ? "Queued" : "+ Queue"}
                       </button>
