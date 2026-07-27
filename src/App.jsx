@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Search, Music4, PlayCircle, ListMusic, X, Shuffle, RotateCcw, FileText, Copy } from "lucide-react";
+import { Search, Music4, PlayCircle, ListMusic, X, Shuffle, RotateCcw, FileText, Copy, RefreshCw } from "lucide-react";
 
 const SHEET_URL =
   "https://docs.google.com/spreadsheets/d/1KC15TiLOjsB3t6yOjyPiLGHgSVN_sq1qi9Zq9yMDNsA/gviz/tq?tqx=out:json&sheet=Sheet1";
+
+const CACHE_KEY = "karaoke-song-cache-v1";
 
 function parseGviz(text) {
   const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);?\s*$/);
@@ -35,31 +37,54 @@ export default function KaraokeApp() {
   const [queue, setQueue] = useState([]);
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
+  const [lastUpdated, setLastUpdated] = useState(null);
+
+  async function refreshSongs() {
+    try {
+      setStatus("loading");
+
+      const res = await fetch(SHEET_URL);
+
+      if (!res.ok)
+        throw new Error(`Sheet fetch failed (${res.status})`);
+
+      const text = await res.text();
+      const parsed = parseGviz(text);
+
+      localStorage.setItem(
+          CACHE_KEY,
+          JSON.stringify({
+            updatedAt: Date.now(),
+            songs: parsed,
+          })
+      );
+
+      setSongs(parsed);
+      setStatus("ready");
+      showToast("Song list refreshed!");
+      setLastUpdated(Date.now());
+    } catch (e) {
+      setErrMsg(e.message || "Could not load sheet");
+      setStatus("error");
+    }
+  }
 
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
+    const cached = localStorage.getItem(CACHE_KEY);
+
+    if (cached) {
       try {
-        setStatus("loading");
-        const res = await fetch(SHEET_URL);
-        if (!res.ok) throw new Error(`Sheet fetch failed (${res.status})`);
-        const text = await res.text();
-        const parsed = parseGviz(text);
-        if (!cancelled) {
-          setSongs(parsed);
-          setStatus("ready");
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setErrMsg(e.message || "Could not load the sheet");
-          setStatus("error");
-        }
+        const data = JSON.parse(cached);
+        setSongs(data.songs || []);
+        setStatus("ready");
+        setLastUpdated(data.updatedAt);
+        return;
+      } catch {
+        localStorage.removeItem(CACHE_KEY);
       }
     }
-    load();
-    return () => {
-      cancelled = true;
-    };
+
+    refreshSongs();
   }, []);
 
   const filtered = useMemo(() => {
@@ -215,7 +240,7 @@ export default function KaraokeApp() {
         .kb-stat b { color: var(--text); font-size: 15px; }
 
         .kb-controls {
-          padding: 8px 24px 18px;
+          padding: 0 24px 12px;
           display: flex;
           gap: 10px;
           flex-wrap: wrap;
@@ -532,6 +557,52 @@ export default function KaraokeApp() {
           animation: spin 0.8s linear infinite;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
+        
+        .kb-refresh {
+          margin: 8px 24px 10px;
+          padding: 14px 18px;
+
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: 12px;
+
+          cursor: pointer;
+          transition: .15s ease;
+        }
+
+        .kb-refresh:hover {
+          background: var(--surface-hi);
+          border-color: var(--cyan-dim);
+        }
+
+        .kb-refresh-left {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+
+          font-weight: 600;
+          color: var(--text);
+          font-size: 1.2rem;
+          font-weight: 700;
+        }
+
+        .kb-refresh-left svg {
+          color: var(--cyan);
+        }
+
+        .kb-refresh-right {
+          font-size: 12px;
+          color: var(--muted);
+          font-family: 'JetBrains Mono', monospace;
+          
+          color: #7e769e;
+          font-size: 0.8rem;
+          opacity: .7;
+        }
       `}</style>
 
       <div className="kb-shell">
@@ -647,6 +718,19 @@ export default function KaraokeApp() {
                   </div>
                 );
               })}
+
+              <div className="kb-refresh" onClick={refreshSongs}>
+                <div className="kb-refresh-left">
+                  <RefreshCw size={18} />
+                  <span>Refresh cache</span>
+                </div>
+
+                <div className="kb-refresh-right">
+                  {lastUpdated
+                      ? `Updated ${new Date(lastUpdated).toLocaleString()}`
+                      : "Never updated"}
+                </div>
+              </div>
             </div>
           )}
         </div>
