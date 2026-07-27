@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Search, Music4, PlayCircle, ListMusic, X, Shuffle, RotateCcw } from "lucide-react";
+import { Search, Music4, PlayCircle, ListMusic, X, Shuffle, RotateCcw, FileText } from "lucide-react";
 
 const SHEET_URL =
   "https://docs.google.com/spreadsheets/d/1KC15TiLOjsB3t6yOjyPiLGHgSVN_sq1qi9Zq9yMDNsA/gviz/tq?tqx=out:json&sheet=Sheet1";
@@ -10,7 +10,7 @@ function parseGviz(text) {
   const json = JSON.parse(match[1]);
   const rows = json.table?.rows || [];
   const songs = [];
-  rows.forEach((row, i) => {
+  rows.slice(1).forEach((row, i) => {
     const cells = row.c || [];
     const name = cells[0]?.v?.toString().trim();
     if (!name) return;
@@ -19,6 +19,7 @@ function parseGviz(text) {
       name,
       series: cells[1]?.v?.toString().trim() || "",
       link: cells[2]?.v?.toString().trim() || "",
+      lyricsLink: cells[3]?.v?.toString().trim() || "",
     });
   });
   return songs;
@@ -30,6 +31,7 @@ export default function KaraokeApp() {
   const [errMsg, setErrMsg] = useState("");
   const [query, setQuery] = useState("");
   const [onlyLinked, setOnlyLinked] = useState(false);
+  const [onlyMissingLyrics, setOnlyMissingLyrics] = useState(false);
   const [queue, setQueue] = useState([]);
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
@@ -64,12 +66,14 @@ export default function KaraokeApp() {
     const q = query.trim().toLowerCase();
     return songs.filter((s) => {
       if (onlyLinked && !s.link) return false;
+      if (onlyMissingLyrics && s.lyricsLink) return false;
       if (!q) return true;
       return s.name.toLowerCase().includes(q) || s.series.toLowerCase().includes(q);
     });
-  }, [songs, query, onlyLinked]);
+  }, [songs, query, onlyLinked, onlyMissingLyrics]);
 
   const linkedCount = useMemo(() => songs.filter((s) => s.link).length, [songs]);
+  const lyricsCount = useMemo(() => songs.filter((s) => s.lyricsLink).length, [songs]);
 
   function showToast(msg) {
     setToast(msg);
@@ -290,7 +294,7 @@ export default function KaraokeApp() {
           text-align: right;
         }
 
-        .kb-meta { min-width: 0; }
+        .kb-meta { min-width: 0; text-align: left; }
         .kb-name {
           font-weight: 600;
           font-size: 14.5px;
@@ -519,6 +523,7 @@ export default function KaraokeApp() {
             <div className="kb-stats">
               <div className="kb-stat"><b>{songs.length}</b> songs</div>
               <div className="kb-stat"><b>{linkedCount}</b> with a link</div>
+              {lyricsCount > 0 && <div className="kb-stat"><b>{lyricsCount}</b> with lyrics</div>}
               <div className="kb-stat"><b>{queue.length}</b> queued</div>
             </div>
           </div>
@@ -539,6 +544,15 @@ export default function KaraokeApp() {
               <span className="dot" />
               Has link only
             </div>
+            {lyricsCount > 0 && (
+              <div
+                className={`kb-toggle ${onlyMissingLyrics ? "active" : ""}`}
+                onClick={() => setOnlyMissingLyrics((v) => !v)}
+              >
+                <span className="dot" />
+                Missing lyrics
+              </div>
+            )}
           </div>
 
           {status === "loading" && (
@@ -577,9 +591,22 @@ export default function KaraokeApp() {
                           href={song.link}
                           target="_blank"
                           rel="noopener noreferrer"
-                          title="Open link"
+                          title="Open song link"
                         >
                           <PlayCircle size={16} />
+                        </a>
+                      )}
+                      {song.lyricsLink && (
+                        <a
+                          className="kb-add-btn"
+                          href={song.lyricsLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ display: "inline-flex", alignItems: "center", textDecoration: "none" }}
+                          title="Open lyrics"
+                        >
+                          <FileText size={14} style={{ marginRight: 6 }} />
+                          Lyrics
                         </a>
                       )}
                       <button
