@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Search, Music4, PlayCircle, ListMusic, X, Shuffle, RotateCcw, FileText } from "lucide-react";
+import { Search, Music4, PlayCircle, ListMusic, X, Shuffle, RotateCcw, FileText, Copy } from "lucide-react";
 
 const SHEET_URL =
   "https://docs.google.com/spreadsheets/d/1KC15TiLOjsB3t6yOjyPiLGHgSVN_sq1qi9Zq9yMDNsA/gviz/tq?tqx=out:json&sheet=Sheet1";
@@ -74,6 +74,15 @@ export default function KaraokeApp() {
 
   const linkedCount = useMemo(() => songs.filter((s) => s.link).length, [songs]);
   const lyricsCount = useMemo(() => songs.filter((s) => s.lyricsLink).length, [songs]);
+
+  async function copySongName(song) {
+    try {
+      await navigator.clipboard.writeText(song.name);
+      showToast(`Copied "${song.name}"`);
+    } catch {
+      showToast("Couldn't copy song name");
+    }
+  }
 
   function showToast(msg) {
     setToast(msg);
@@ -269,15 +278,22 @@ export default function KaraokeApp() {
 
         .kb-row {
           display: grid;
-          grid-template-columns: 44px 1fr auto;
+          grid-template-columns: auto 1fr auto;
+          gap: 12px;
           align-items: center;
-          gap: 14px;
+
           background: var(--surface);
           border: 1px solid var(--border);
           border-radius: 12px;
+
           padding: 12px 14px;
-          transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+
+          transition:
+            border-color 0.15s ease,
+            background 0.15s ease,
+            transform 0.1s ease;
         }
+
         .kb-row:hover {
           border-color: var(--pink-dim);
           background: var(--surface-hi);
@@ -289,9 +305,12 @@ export default function KaraokeApp() {
 
         .kb-num {
           font-family: 'JetBrains Mono', monospace;
-          font-size: 12px;
+          font-size: 11px;
+          font-weight: 400;
           color: var(--muted);
           text-align: right;
+          font-variant-numeric: tabular-nums;
+          opacity: 0.8;
         }
 
         .kb-meta { min-width: 0; text-align: left; }
@@ -616,6 +635,13 @@ export default function KaraokeApp() {
                         style={{ display: "none" }}
                       >
                         {inQueue ? "Queued" : "+ Queue"}
+                      </button>
+                      <button
+                          className="kb-icon-btn"
+                          onClick={() => copySongName(song)}
+                          title="Copy song name"
+                      >
+                        <Copy size={16} />
                       </button>
                     </div>
                   </div>
