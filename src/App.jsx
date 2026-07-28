@@ -397,20 +397,6 @@ export default function KaraokeApp() {
                     {song.series && <div className="kb-series">{song.series}</div>}
                   </div>
                   <div className="kb-actions">
-                    <button
-                      className={`kb-icon-btn kb-star-btn ${isSuggested ? "active" : ""}`}
-                      onClick={() => toggleSuggestion(song)}
-                      title={isSuggested ? "Remove from Up Next" : "Save for next time"}
-                    >
-                      <Star size={15} strokeWidth={1.75} fill={isSuggested ? "currentColor" : "none"} />
-                    </button>
-                    <button
-                      className={`kb-icon-btn ${isCopied ? "copied" : ""}`}
-                      onClick={() => copySongName(song)}
-                      title="Copy song name"
-                    >
-                      {isCopied ? <Check size={15} strokeWidth={1.75} /> : <Copy size={15} strokeWidth={1.75} />}
-                    </button>
                     {song.link && (
                       <a
                         className="kb-icon-btn"
@@ -433,6 +419,20 @@ export default function KaraokeApp() {
                         <FileText size={15} strokeWidth={1.75} />
                       </a>
                     )}
+                    <button
+                      className={`kb-icon-btn kb-star-btn ${isSuggested ? "active" : ""}`}
+                      onClick={() => toggleSuggestion(song)}
+                      title={isSuggested ? "Remove from Up Next" : "Save for next time"}
+                    >
+                      <Star size={15} strokeWidth={1.75} fill={isSuggested ? "currentColor" : "none"} />
+                    </button>
+                    <button
+                      className={`kb-icon-btn ${isCopied ? "copied" : ""}`}
+                      onClick={() => copySongName(song)}
+                      title="Copy song name"
+                    >
+                      {isCopied ? <Check size={15} strokeWidth={1.75} /> : <Copy size={15} strokeWidth={1.75} />}
+                    </button>
                   </div>
                 </div>
               );
