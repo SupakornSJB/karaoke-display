@@ -354,6 +354,9 @@ export default function KaraokeApp() {
                 <Star size={13} fill={spotlightSaved ? "currentColor" : "none"} />
                 {spotlightSaved ? "Saved" : "Save for later"}
               </button>
+              <button className="kb-tool-btn" onClick={() => copySongName(spotlight)}>
+                <Copy size={13} /> Copy song name
+              </button>
               {spotlight.link && (
                 <a className="kb-tool-btn" href={spotlight.link} target="_blank" rel="noopener noreferrer">
                   <PlayCircle size={13} /> Play
