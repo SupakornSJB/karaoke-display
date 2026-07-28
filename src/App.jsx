@@ -18,8 +18,7 @@ import {
 } from "lucide-react";
 import "./App.css";
 
-const SHEET_URL =
-  "https://docs.google.com/spreadsheets/d/1KC15TiLOjsB3t6yOjyPiLGHgSVN_sq1qi9Zq9yMDNsA/gviz/tq?tqx=out:json&sheet=Sheet1";
+const SHEET_URL = import.meta.env.VITE_SHEET_URL;
 
 const CACHE_KEY = "karaoke-song-cache-v1";
 const SUGGEST_KEY = "karaoke-suggestions-v1";
@@ -68,6 +67,11 @@ export default function KaraokeApp() {
   }
 
   async function refreshSongs() {
+    if (!SHEET_URL) {
+      setErrMsg("VITE_SHEET_URL is not set — check your .env file or build config");
+      setStatus("error");
+      return;
+    }
     try {
       setStatus("loading");
       const res = await fetch(SHEET_URL);
