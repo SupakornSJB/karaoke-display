@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   Search,
   Music4,
@@ -15,8 +16,43 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
+  ShieldAlert,
+  ExternalLink,
 } from "lucide-react";
 import "./App.css";
+
+// Only allow http/https, well-formed URLs. Returns a parsed URL object or null.
+function safeUrl(url) {
+  if (!url || typeof url !== "string") return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return parsed;
+    }
+  } catch {
+    // malformed URL — treat as unsafe
+  }
+  return null;
+}
+
+// Flags a few classic link-spoofing patterns so the confirm dialog can warn about them.
+function getLinkWarnings(parsed) {
+  const warnings = [];
+  if (parsed.username || parsed.password) {
+    warnings.push("This link has a username/password embedded in it — a common phishing trick to disguise the real destination.");
+  }
+  if (parsed.hostname.includes("xn--")) {
+    warnings.push("This domain uses internationalized characters that can be made to visually resemble a different, trusted site.");
+  }
+  if (/[^\x00-\x7F]/.test(parsed.hostname)) {
+    warnings.push("This domain contains non-standard characters.");
+  }
+  return warnings;
+}
+
+function isSafeLink(url) {
+  return safeUrl(url) !== null;
+}
 
 const SHEET_URL = import.meta.env.VITE_SHEET_URL;
 
@@ -57,6 +93,7 @@ export default function KaraokeApp() {
   const [toast, setToast] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [pendingLink, setPendingLink] = useState(null);
   const toastTimer = useRef(null);
   const copyTimer = useRef(null);
 
@@ -81,8 +118,8 @@ export default function KaraokeApp() {
 
       try {
         localStorage.setItem(
-          CACHE_KEY,
-          JSON.stringify({ updatedAt: Date.now(), songs: parsed })
+            CACHE_KEY,
+            JSON.stringify({ updatedAt: Date.now(), songs: parsed })
         );
       } catch {
         // storage might be full or unavailable — app still works without cache
@@ -130,6 +167,16 @@ export default function KaraokeApp() {
       // ignore malformed storage
     }
   }, []);
+
+  // Close the link-confirm dialog on Escape
+  useEffect(() => {
+    if (!pendingLink) return;
+    function onKeyDown(e) {
+      if (e.key === "Escape") setPendingLink(null);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [pendingLink]);
 
   const suggestedIds = useMemo(() => new Set(suggestions.map((s) => s.id)), [suggestions]);
 
@@ -233,6 +280,33 @@ export default function KaraokeApp() {
     } catch {
       showToast("Couldn't copy — try selecting manually");
     }
+  }
+
+  // Sanitizes the URL, then asks the user to confirm before it's opened.
+  function requestOpenLink(rawUrl, label, songName) {
+    const parsed = safeUrl(rawUrl);
+    if (!parsed) {
+      showToast("That link doesn't look safe to open");
+      return;
+    }
+    setPendingLink({
+      url: parsed.href,
+      host: parsed.hostname,
+      label,
+      songName,
+      warnings: getLinkWarnings(parsed),
+    });
+  }
+
+  function confirmOpenLink() {
+    if (pendingLink) {
+      window.open(pendingLink.url, "_blank", "noopener,noreferrer");
+    }
+    setPendingLink(null);
+  }
+
+  function cancelOpenLink() {
+    setPendingLink(null);
   }
 
   const spotlightSaved = spotlight ? suggestedIds.has(spotlight.id) : false;
@@ -357,15 +431,21 @@ export default function KaraokeApp() {
               <button className="kb-tool-btn" onClick={() => copySongName(spotlight)}>
                 <Copy size={13} /> Copy song name
               </button>
-              {spotlight.link && (
-                <a className="kb-tool-btn" href={spotlight.link} target="_blank" rel="noopener noreferrer">
-                  <PlayCircle size={13} /> Play
-                </a>
+              {isSafeLink(spotlight.link) && (
+                  <button
+                    className="kb-tool-btn"
+                    onClick={() => requestOpenLink(spotlight.link, "song link", spotlight.name)}
+                  >
+                    <PlayCircle size={13} /> Play
+                  </button>
               )}
-              {spotlight.lyricsLink && (
-                <a className="kb-tool-btn" href={spotlight.lyricsLink} target="_blank" rel="noopener noreferrer">
-                  <FileText size={13} /> Lyrics
-                </a>
+              {isSafeLink(spotlight.lyricsLink) && (
+                  <button
+                    className="kb-tool-btn"
+                    onClick={() => requestOpenLink(spotlight.lyricsLink, "lyrics", spotlight.name)}
+                  >
+                    <FileText size={13} /> Lyrics
+                  </button>
               )}
             </div>
           </div>
@@ -400,27 +480,23 @@ export default function KaraokeApp() {
                     {song.series && <div className="kb-series">{song.series}</div>}
                   </div>
                   <div className="kb-actions">
-                    {song.link && (
-                      <a
-                        className="kb-icon-btn"
-                        href={song.link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title="Open song link"
+                    {isSafeLink(song.link) && (
+                      <button
+                          className="kb-icon-btn"
+                          onClick={() => requestOpenLink(song.link, "song link", song.name)}
+                          title="Open song link"
                       >
                         <PlayCircle size={16} />
-                      </a>
+                      </button>
                     )}
-                    {song.lyricsLink && (
-                      <a
+                    {isSafeLink(song.lyricsLink) && (
+                      <button
                         className="kb-icon-btn"
-                        href={song.lyricsLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                        onClick={() => requestOpenLink(song.lyricsLink, "lyrics", song.name)}
                         title="Open lyrics"
                       >
                         <FileText size={15} strokeWidth={1.75} />
-                      </a>
+                      </button>
                     )}
                     <button
                       className={`kb-icon-btn kb-star-btn ${isSuggested ? "active" : ""}`}
@@ -455,6 +531,43 @@ export default function KaraokeApp() {
       </div>
 
       {toast && <div className="kb-toast">{toast}</div>}
+
+      {pendingLink && createPortal(
+          <div className="kb-modal-overlay" onClick={cancelOpenLink}>
+            <div className="kb-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+              <div className="kb-modal-icon">
+                {pendingLink.warnings.length > 0 ? <ShieldAlert size={20} /> : <ExternalLink size={20} />}
+              </div>
+              <div className="kb-modal-title">Open this link?</div>
+              <div className="kb-modal-body">
+                Opening the {pendingLink.label} for <b>"{pendingLink.songName}"</b>
+              </div>
+              <div className="kb-modal-host">{pendingLink.host}</div>
+              <div className="kb-modal-url">{pendingLink.url}</div>
+
+              {pendingLink.warnings.length > 0 && (
+                  <div className="kb-modal-warnings">
+                    {pendingLink.warnings.map((w, idx) => (
+                        <div className="kb-modal-warning" key={idx}>
+                          <ShieldAlert size={14} />
+                          <span>{w}</span>
+                        </div>
+                    ))}
+                  </div>
+              )}
+
+              <div className="kb-modal-actions">
+                <button className="kb-modal-cancel" onClick={cancelOpenLink}>
+                  Cancel
+                </button>
+                <button className="kb-modal-confirm" onClick={confirmOpenLink}>
+                  <ExternalLink size={14} /> Open link
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+      )}
     </div>
   );
 }
