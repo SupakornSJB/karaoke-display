@@ -24,12 +24,12 @@ The app is intentionally single-file: **all UI, state, and data logic live in `s
 ### Data flow
 
 1. **Fetch** — `refreshSongs()` fetches `VITE_SHEET_URL` (Google Sheets `gviz` JSON endpoint, no auth). The response is JSONP-shaped, wrapped in `google.visualization.Query.setResponse(...)`; `parseGviz()` strips that wrapper before `JSON.parse`.
-2. **Shape** — Row 0 of the sheet is skipped (assumed header). Columns A–D map to `name`, `series`, `link`, `lyricsLink`. Rows with an empty name are dropped. IDs are assigned from the row's position in the sheet *before* empty rows are dropped (`s0`, `s2`, ... — gaps are possible) — they are **not stable across sheet edits**, which is why the cache has a hard weekly expiry rather than a merge strategy.
+2. **Shape** — Row 0 of the sheet is skipped (assumed header). Columns A–D map to `name`, `series`, `link`, `lyricsLink`. Rows with an empty name are dropped. IDs are **content-based** via `makeSongId(name, series)`: `JSON.stringify` of the NFC-normalized, whitespace-collapsed, lowercased name and series, so they survive rows being inserted/deleted. Rows with the same normalized name+series get `#2`, `#3`, ... by occurrence order (needed for unique React keys). Consequences: rows differing only in case/spacing count as duplicates, and renaming a song or its series in the sheet changes its id (its star is lost).
 3. **Cache** — Two independent `localStorage` keys:
-   - `karaoke-song-cache-v1` — the fetched song list plus `updatedAt` timestamp. Auto-invalidated after `ONE_WEEK_MS` (7 days). On mount, a fresh-enough cache short-circuits the network fetch.
-   - `karaoke-suggestions-v1` — the user's starred "Up Next" list (full song objects, never expires).
-   These keys are **deliberately separate** so that clearing/expiring the song cache never wipes the user's saved suggestions. Keep this invariant if you touch storage.
-   Known limitation: starred state (`suggestedIds`) is matched by `id` only. After a sheet row is inserted or deleted, a saved suggestion's `id` can point to a different song, so the star shows on the wrong row. The Up Next panel still shows the right name because it renders the stored object. Keep this in mind if you change how IDs are assigned.
+   - `karaoke-song-cache-v2` — the fetched song list plus `updatedAt` timestamp. Auto-invalidated after `ONE_WEEK_MS` (7 days). On mount, a fresh-enough cache short-circuits the network fetch. The old `karaoke-song-cache-v1` (positional `s0`, `s1` ids) is removed on mount by exact key (`LEGACY_CACHE_KEY`). Bump the version again if the song/id shape changes.
+   - `karaoke-suggestions-v1` — the user's starred "Up Next" list (full song objects, never expires). On mount each entry's `id` is re-derived from its stored `name`/`series` (migrating old positional ids) and deduped. Malformed or non-array storage is left untouched rather than overwritten.
+   These keys are **deliberately separate** so that clearing/expiring the song cache never wipes the user's saved suggestions. Never clear storage by prefix scan or `localStorage.clear()`. Keep this invariant if you touch storage.
+   Starred state (`suggestedIds`) is matched by `id`. A starred song that is removed or renamed in the sheet stays in Up Next (removable from its chip) but shows no star in the list.
 4. **Render** — `filtered` (memoized) applies the search query + filter mode, then re-sorts so starred songs bubble to the top while preserving original order within each group.
 
 ### Link safety

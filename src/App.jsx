@@ -56,9 +56,22 @@ function isSafeLink(url) {
 
 const SHEET_URL = import.meta.env.VITE_SHEET_URL;
 
-const CACHE_KEY = "karaoke-song-cache-v1";
+// v1 cached songs with positional ids; it's removed on mount so it can't be reused.
+const LEGACY_CACHE_KEY = "karaoke-song-cache-v1";
+const CACHE_KEY = "karaoke-song-cache-v2";
 const SUGGEST_KEY = "karaoke-suggestions-v1";
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+function normalizeIdPart(value) {
+  return value.normalize("NFC").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+// Content-based id so stars survive rows being inserted/deleted in the sheet.
+// Identical (name, series) rows are told apart by occurrence order: #2, #3, ...
+function makeSongId(name, series, occurrence = 1) {
+  const base = JSON.stringify([normalizeIdPart(name), normalizeIdPart(series)]);
+  return occurrence > 1 ? `${base}#${occurrence}` : base;
+}
 
 function parseGviz(text) {
   const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);?\s*$/);
@@ -66,14 +79,19 @@ function parseGviz(text) {
   const json = JSON.parse(match[1]);
   const rows = json.table?.rows || [];
   const songs = [];
-  rows.slice(1).forEach((row, i) => {
+  const seenCounts = new Map();
+  rows.slice(1).forEach((row) => {
     const cells = row.c || [];
     const name = cells[0]?.v?.toString().trim();
     if (!name) return;
+    const series = cells[1]?.v?.toString().trim() || "";
+    const baseId = makeSongId(name, series);
+    const occurrence = (seenCounts.get(baseId) || 0) + 1;
+    seenCounts.set(baseId, occurrence);
     songs.push({
-      id: `s${i}`,
+      id: makeSongId(name, series, occurrence),
       name,
-      series: cells[1]?.v?.toString().trim() || "",
+      series,
       link: cells[2]?.v?.toString().trim() || "",
       lyricsLink: cells[3]?.v?.toString().trim() || "",
     });
@@ -139,6 +157,11 @@ export default function KaraokeApp() {
   useEffect(() => {
     let usedCache = false;
     try {
+      localStorage.removeItem(LEGACY_CACHE_KEY);
+    } catch {
+      // storage unavailable — nothing to clean up
+    }
+    try {
       const cached = localStorage.getItem(CACHE_KEY);
       if (cached) {
         const data = JSON.parse(cached);
@@ -158,14 +181,30 @@ export default function KaraokeApp() {
     if (!usedCache) refreshSongs();
   }, []);
 
-  // Load saved suggestions on mount
+  // Load saved suggestions on mount, re-deriving ids so entries saved with old
+  // positional ids (s0, s1, ...) match the content-based ids
   useEffect(() => {
+    let raw;
     try {
-      const raw = localStorage.getItem(SUGGEST_KEY);
-      if (raw) setSuggestions(JSON.parse(raw));
+      raw = JSON.parse(localStorage.getItem(SUGGEST_KEY));
     } catch {
-      // ignore malformed storage
+      return; // ignore malformed storage — never overwrite it here
     }
+    if (!Array.isArray(raw)) return;
+
+    const seen = new Set();
+    const migrated = [];
+    raw.forEach((s) => {
+      if (!s || typeof s !== "object" || typeof s.name !== "string") return;
+      const series = String(s.series ?? "");
+      const id = makeSongId(s.name, series);
+      if (seen.has(id)) return;
+      seen.add(id);
+      migrated.push({ ...s, series, id });
+    });
+
+    setSuggestions(migrated);
+    if (JSON.stringify(migrated) !== JSON.stringify(raw)) persist(migrated);
   }, []);
 
   // Close the link-confirm dialog on Escape
