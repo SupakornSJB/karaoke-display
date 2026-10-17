@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   Search,
@@ -20,28 +20,22 @@ import {
   ExternalLink,
 } from "lucide-react";
 import "./App.css";
-import { safeUrl, getLinkWarnings, isSafeLink, parseGviz, migrateSuggestions } from "./lib.js";
-
-const SHEET_URL = import.meta.env.VITE_SHEET_URL;
-
-// v1 cached songs with positional ids; it's removed on mount so it can't be reused.
-const LEGACY_CACHE_KEY = "karaoke-song-cache-v1";
-const CACHE_KEY = "karaoke-song-cache-v2";
-const SUGGEST_KEY = "karaoke-suggestions-v1";
-const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+import { safeUrl, getLinkWarnings, isSafeLink } from "./lib.js";
+import { fetchSongs, loadCachedSongs, loadSuggestions, saveSuggestions } from "./storage.js";
 
 export default function KaraokeApp() {
-  const [songs, setSongs] = useState([]);
-  const [status, setStatus] = useState("loading"); // loading | ready | error
+  const [initialCache] = useState(loadCachedSongs);
+  const [songs, setSongs] = useState(() => initialCache?.songs || []);
+  const [status, setStatus] = useState(initialCache ? "ready" : "loading"); // loading | ready | error
   const [errMsg, setErrMsg] = useState("");
   const [query, setQuery] = useState("");
   const [filterMode, setFilterMode] = useState("all"); // all | linked | missing-link | lyrics | missing-lyrics
-  const [suggestions, setSuggestions] = useState([]);
+  const [suggestions, setSuggestions] = useState(loadSuggestions);
   const [showSuggestPanel, setShowSuggestPanel] = useState(false);
   const [spotlight, setSpotlight] = useState(null);
   const [toast, setToast] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
-  const [lastUpdated, setLastUpdated] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(initialCache?.updatedAt ?? null);
   const [pendingLink, setPendingLink] = useState(null);
   const toastTimer = useRef(null);
   const copyTimer = useRef(null);
@@ -52,80 +46,27 @@ export default function KaraokeApp() {
     toastTimer.current = setTimeout(() => setToast(null), 1800);
   }
 
-  async function refreshSongs() {
-    if (!SHEET_URL) {
-      setErrMsg("VITE_SHEET_URL is not set — check your .env file or build config");
-      setStatus("error");
-      return;
-    }
-    try {
-      setStatus("loading");
-      const res = await fetch(SHEET_URL);
-      if (!res.ok) throw new Error(`Sheet fetch failed (${res.status})`);
-      const text = await res.text();
-      const parsed = parseGviz(text);
-
-      try {
-        localStorage.setItem(
-            CACHE_KEY,
-            JSON.stringify({ updatedAt: Date.now(), songs: parsed })
-        );
-      } catch {
-        // storage might be full or unavailable — app still works without cache
-      }
-
-      setSongs(parsed);
-      setStatus("ready");
-      setLastUpdated(Date.now());
-      showToast("Song list refreshed!");
-    } catch (e) {
-      setErrMsg(e.message || "Could not load sheet");
-      setStatus("error");
-    }
+  function onSongsLoaded(parsed) {
+    setSongs(parsed);
+    setStatus("ready");
+    setLastUpdated(Date.now());
+    showToast("Song list refreshed!");
   }
 
-  // Load song cache on mount, dropping it automatically if it's over a week old
-  useEffect(() => {
-    let usedCache = false;
-    try {
-      localStorage.removeItem(LEGACY_CACHE_KEY);
-    } catch {
-      // storage unavailable — nothing to clean up
-    }
-    try {
-      const cached = localStorage.getItem(CACHE_KEY);
-      if (cached) {
-        const data = JSON.parse(cached);
-        const age = Date.now() - (data.updatedAt || 0);
-        if (age < ONE_WEEK_MS && Array.isArray(data.songs)) {
-          setSongs(data.songs);
-          setStatus("ready");
-          setLastUpdated(data.updatedAt);
-          usedCache = true;
-        } else {
-          localStorage.removeItem(CACHE_KEY);
-        }
-      }
-    } catch {
-      localStorage.removeItem(CACHE_KEY);
-    }
-    if (!usedCache) refreshSongs();
-  }, []);
+  function onSongsFailed(e) {
+    setErrMsg(e.message || "Could not load sheet");
+    setStatus("error");
+  }
 
-  // Load saved suggestions on mount, re-deriving ids so entries saved with old
-  // positional ids (s0, s1, ...) match the content-based ids
-  useEffect(() => {
-    let raw;
-    try {
-      raw = JSON.parse(localStorage.getItem(SUGGEST_KEY));
-    } catch {
-      return; // ignore malformed storage — never overwrite it here
-    }
-    const migrated = migrateSuggestions(raw);
-    if (!migrated) return;
+  function refreshSongs() {
+    setStatus("loading");
+    fetchSongs().then(onSongsLoaded, onSongsFailed);
+  }
 
-    setSuggestions(migrated);
-    if (JSON.stringify(migrated) !== JSON.stringify(raw)) persist(migrated);
+  // Fetch the sheet on mount when there was no fresh cache
+  useEffect(() => {
+    if (!initialCache) fetchSongs().then(onSongsLoaded, onSongsFailed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only; the handlers are recreated every render
   }, []);
 
   // Close the link-confirm dialog on Escape
@@ -161,19 +102,11 @@ export default function KaraokeApp() {
   const linkedCount = useMemo(() => songs.filter((s) => s.link).length, [songs]);
   const lyricsCount = useMemo(() => songs.filter((s) => s.lyricsLink).length, [songs]);
 
-  function persist(next) {
-    try {
-      localStorage.setItem(SUGGEST_KEY, JSON.stringify(next));
-    } catch {
-      // storage might be full or unavailable
-    }
-  }
-
   function addSuggestion(song) {
     setSuggestions((prev) => {
       if (prev.find((s) => s.id === song.id)) return prev;
       const next = [...prev, song];
-      persist(next);
+      saveSuggestions(next);
       showToast(`Saved "${song.name}" for next time`);
       return next;
     });
@@ -182,7 +115,7 @@ export default function KaraokeApp() {
   function removeSuggestion(songId, name) {
     setSuggestions((prev) => {
       const next = prev.filter((s) => s.id !== songId);
-      persist(next);
+      saveSuggestions(next);
       if (name) showToast(`Removed "${name}"`);
       return next;
     });
@@ -195,7 +128,7 @@ export default function KaraokeApp() {
 
   function clearSuggestions() {
     setSuggestions([]);
-    persist([]);
+    saveSuggestions([]);
   }
 
   function shuffleSuggestions() {
@@ -205,7 +138,7 @@ export default function KaraokeApp() {
         const j = Math.floor(Math.random() * (i + 1));
         [arr[i], arr[j]] = [arr[j], arr[i]];
       }
-      persist(arr);
+      saveSuggestions(arr);
       return arr;
     });
   }
