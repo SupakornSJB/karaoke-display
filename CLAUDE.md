@@ -7,9 +7,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm run dev` — start the Vite dev server
 - `npm run build` — production build (outputs to `dist/`)
 - `npm run preview` — serve the production build locally
-- `npm run lint` — run ESLint over the repo (flat config in `eslint.config.js`)
+- `npm run lint` — run ESLint over the repo (flat config in `eslint.config.js`). `App.jsx` currently has pre-existing errors (unused `React` import, `react-hooks/set-state-in-effect` in the mount effects)
+- `npm test` — run the Vitest suite once (`npx vitest` for watch mode, `npx vitest run -t "<name>"` for a single test)
 
-There is no test runner configured — the project ships without a test suite.
+Tests live next to the code as `*.test.js` and run in Vitest's default Node environment (no jsdom/React Testing Library yet), so they cover the pure helpers in `src/lib.js` only.
+
+## CI
+
+- `.github/workflows/ci.yml` — on every PR and push to `main`: `npm ci`, lint (**non-blocking** via `continue-on-error` until the existing lint errors are fixed), `npm test`, `npm run build`.
+- `.github/workflows/claude-review.yml` — Claude (`anthropics/claude-code-action@v1`) reviews non-draft PRs from this repo and posts PR/inline comments. Needs the `ANTHROPIC_API_KEY` repo secret; skipped for fork PRs (no secrets). Its prompt lists this file's invariants — keep them in sync.
+- `.github/workflows/deploy.yml` — builds and deploys `main` to GitHub Pages.
 
 ## Environment
 
@@ -19,7 +26,7 @@ The app requires `VITE_SHEET_URL` (the Google Sheets `gviz` JSON endpoint for a 
 
 ## Architecture
 
-The app is intentionally single-file: **all UI, state, and data logic live in `src/App.jsx`** (~570 lines). `main.jsx` is only a mount point. There is no router, no state management library, no backend, and no server-side code. Prefer extending `App.jsx` before introducing new module boundaries — the project's design point is that the sheet *is* the database and the app is a thin renderer over it.
+The app is intentionally near single-file: **all UI and state live in `src/App.jsx`** (~530 lines), and the pure, React-free helpers (`safeUrl`, `getLinkWarnings`, `isSafeLink`, `makeSongId`, `parseGviz`, `migrateSuggestions`) live in `src/lib.js` so they can be unit tested. `main.jsx` is only a mount point. There is no router, no state management library, no backend, and no server-side code. Prefer extending these two files before introducing new module boundaries — the project's design point is that the sheet *is* the database and the app is a thin renderer over it. New pure logic goes in `lib.js` with tests in `lib.test.js`.
 
 ### Data flow
 

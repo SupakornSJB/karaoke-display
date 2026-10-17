@@ -20,39 +20,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import "./App.css";
-
-// Only allow http/https, well-formed URLs. Returns a parsed URL object or null.
-function safeUrl(url) {
-  if (!url || typeof url !== "string") return null;
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-      return parsed;
-    }
-  } catch {
-    // malformed URL — treat as unsafe
-  }
-  return null;
-}
-
-// Flags a few classic link-spoofing patterns so the confirm dialog can warn about them.
-function getLinkWarnings(parsed) {
-  const warnings = [];
-  if (parsed.username || parsed.password) {
-    warnings.push("This link has a username/password embedded in it — a common phishing trick to disguise the real destination.");
-  }
-  if (parsed.hostname.includes("xn--")) {
-    warnings.push("This domain uses internationalized characters that can be made to visually resemble a different, trusted site.");
-  }
-  if (/[^\x00-\x7F]/.test(parsed.hostname)) {
-    warnings.push("This domain contains non-standard characters.");
-  }
-  return warnings;
-}
-
-function isSafeLink(url) {
-  return safeUrl(url) !== null;
-}
+import { safeUrl, getLinkWarnings, isSafeLink, parseGviz, migrateSuggestions } from "./lib.js";
 
 const SHEET_URL = import.meta.env.VITE_SHEET_URL;
 
@@ -61,43 +29,6 @@ const LEGACY_CACHE_KEY = "karaoke-song-cache-v1";
 const CACHE_KEY = "karaoke-song-cache-v2";
 const SUGGEST_KEY = "karaoke-suggestions-v1";
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-
-function normalizeIdPart(value) {
-  return value.normalize("NFC").trim().replace(/\s+/g, " ").toLowerCase();
-}
-
-// Content-based id so stars survive rows being inserted/deleted in the sheet.
-// Identical (name, series) rows are told apart by occurrence order: #2, #3, ...
-function makeSongId(name, series, occurrence = 1) {
-  const base = JSON.stringify([normalizeIdPart(name), normalizeIdPart(series)]);
-  return occurrence > 1 ? `${base}#${occurrence}` : base;
-}
-
-function parseGviz(text) {
-  const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);?\s*$/);
-  if (!match) throw new Error("Unexpected response shape from Sheets");
-  const json = JSON.parse(match[1]);
-  const rows = json.table?.rows || [];
-  const songs = [];
-  const seenCounts = new Map();
-  rows.slice(1).forEach((row) => {
-    const cells = row.c || [];
-    const name = cells[0]?.v?.toString().trim();
-    if (!name) return;
-    const series = cells[1]?.v?.toString().trim() || "";
-    const baseId = makeSongId(name, series);
-    const occurrence = (seenCounts.get(baseId) || 0) + 1;
-    seenCounts.set(baseId, occurrence);
-    songs.push({
-      id: makeSongId(name, series, occurrence),
-      name,
-      series,
-      link: cells[2]?.v?.toString().trim() || "",
-      lyricsLink: cells[3]?.v?.toString().trim() || "",
-    });
-  });
-  return songs;
-}
 
 export default function KaraokeApp() {
   const [songs, setSongs] = useState([]);
@@ -190,18 +121,8 @@ export default function KaraokeApp() {
     } catch {
       return; // ignore malformed storage — never overwrite it here
     }
-    if (!Array.isArray(raw)) return;
-
-    const seen = new Set();
-    const migrated = [];
-    raw.forEach((s) => {
-      if (!s || typeof s !== "object" || typeof s.name !== "string") return;
-      const series = String(s.series ?? "");
-      const id = makeSongId(s.name, series);
-      if (seen.has(id)) return;
-      seen.add(id);
-      migrated.push({ ...s, series, id });
-    });
+    const migrated = migrateSuggestions(raw);
+    if (!migrated) return;
 
     setSuggestions(migrated);
     if (JSON.stringify(migrated) !== JSON.stringify(raw)) persist(migrated);
