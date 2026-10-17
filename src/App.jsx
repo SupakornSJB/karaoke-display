@@ -20,66 +20,15 @@ import {
   ExternalLink,
 } from "lucide-react";
 import "./App.css";
-
-// Only allow http/https, well-formed URLs. Returns a parsed URL object or null.
-function safeUrl(url) {
-  if (!url || typeof url !== "string") return null;
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-      return parsed;
-    }
-  } catch {
-    // malformed URL — treat as unsafe
-  }
-  return null;
-}
-
-// Flags a few classic link-spoofing patterns so the confirm dialog can warn about them.
-function getLinkWarnings(parsed) {
-  const warnings = [];
-  if (parsed.username || parsed.password) {
-    warnings.push("This link has a username/password embedded in it — a common phishing trick to disguise the real destination.");
-  }
-  if (parsed.hostname.includes("xn--")) {
-    warnings.push("This domain uses internationalized characters that can be made to visually resemble a different, trusted site.");
-  }
-  if (/[^\x00-\x7F]/.test(parsed.hostname)) {
-    warnings.push("This domain contains non-standard characters.");
-  }
-  return warnings;
-}
-
-function isSafeLink(url) {
-  return safeUrl(url) !== null;
-}
+import { safeUrl, getLinkWarnings, isSafeLink, parseGviz, migrateSuggestions } from "./lib.js";
 
 const SHEET_URL = import.meta.env.VITE_SHEET_URL;
 
-const CACHE_KEY = "karaoke-song-cache-v1";
+// v1 cached songs with positional ids; it's removed on mount so it can't be reused.
+const LEGACY_CACHE_KEY = "karaoke-song-cache-v1";
+const CACHE_KEY = "karaoke-song-cache-v2";
 const SUGGEST_KEY = "karaoke-suggestions-v1";
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-
-function parseGviz(text) {
-  const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);?\s*$/);
-  if (!match) throw new Error("Unexpected response shape from Sheets");
-  const json = JSON.parse(match[1]);
-  const rows = json.table?.rows || [];
-  const songs = [];
-  rows.slice(1).forEach((row, i) => {
-    const cells = row.c || [];
-    const name = cells[0]?.v?.toString().trim();
-    if (!name) return;
-    songs.push({
-      id: `s${i}`,
-      name,
-      series: cells[1]?.v?.toString().trim() || "",
-      link: cells[2]?.v?.toString().trim() || "",
-      lyricsLink: cells[3]?.v?.toString().trim() || "",
-    });
-  });
-  return songs;
-}
 
 export default function KaraokeApp() {
   const [songs, setSongs] = useState([]);
@@ -139,6 +88,11 @@ export default function KaraokeApp() {
   useEffect(() => {
     let usedCache = false;
     try {
+      localStorage.removeItem(LEGACY_CACHE_KEY);
+    } catch {
+      // storage unavailable — nothing to clean up
+    }
+    try {
       const cached = localStorage.getItem(CACHE_KEY);
       if (cached) {
         const data = JSON.parse(cached);
@@ -158,14 +112,20 @@ export default function KaraokeApp() {
     if (!usedCache) refreshSongs();
   }, []);
 
-  // Load saved suggestions on mount
+  // Load saved suggestions on mount, re-deriving ids so entries saved with old
+  // positional ids (s0, s1, ...) match the content-based ids
   useEffect(() => {
+    let raw;
     try {
-      const raw = localStorage.getItem(SUGGEST_KEY);
-      if (raw) setSuggestions(JSON.parse(raw));
+      raw = JSON.parse(localStorage.getItem(SUGGEST_KEY));
     } catch {
-      // ignore malformed storage
+      return; // ignore malformed storage — never overwrite it here
     }
+    const migrated = migrateSuggestions(raw);
+    if (!migrated) return;
+
+    setSuggestions(migrated);
+    if (JSON.stringify(migrated) !== JSON.stringify(raw)) persist(migrated);
   }, []);
 
   // Close the link-confirm dialog on Escape
