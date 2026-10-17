@@ -46,15 +46,22 @@ describe("loadCachedSongs", () => {
     expect(storage.getItem(SUGGEST_KEY)).toBe("[]");
   });
 
+  it("drops a fresh cache whose songs isn't an array", () => {
+    storage.setItem(CACHE_KEY, JSON.stringify({ updatedAt: Date.now(), songs: { id: "x" } }));
+    expect(loadCachedSongs()).toBeNull();
+    expect(storage.getItem(CACHE_KEY)).toBeNull();
+  });
+
   it("returns null when storage throws", () => {
-    vi.stubGlobal("localStorage", {
-      getItem: () => { throw new Error("denied"); },
-      setItem: () => { throw new Error("denied"); },
-      removeItem: () => { throw new Error("denied"); },
-    });
+    vi.stubGlobal("localStorage", throwingStorage());
     expect(loadCachedSongs()).toBeNull();
   });
 });
+
+function throwingStorage() {
+  const fail = () => { throw new Error("denied"); };
+  return { getItem: fail, setItem: fail, removeItem: fail };
+}
 
 describe("loadSuggestions", () => {
   it("migrates positional ids and writes them back", () => {
@@ -70,6 +77,12 @@ describe("loadSuggestions", () => {
       expect(loadSuggestions()).toEqual([]);
       expect(storage.getItem(SUGGEST_KEY)).toBe(raw);
     }
+  });
+
+  it("returns [] when storage throws, and saveSuggestions doesn't throw", () => {
+    vi.stubGlobal("localStorage", throwingStorage());
+    expect(loadSuggestions()).toEqual([]);
+    expect(() => saveSuggestions([])).not.toThrow();
   });
 
   it("returns [] when nothing is saved, and round-trips saveSuggestions", () => {
