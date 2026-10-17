@@ -15,7 +15,7 @@ Tests live next to the code as `*.test.js` and run in Vitest's default Node envi
 ## CI
 
 - `.github/workflows/ci.yml` — on every PR and push to `main`: `npm ci`, lint (**non-blocking** via `continue-on-error` until the existing lint errors are fixed), `npm test`, `npm run build`.
-- `.github/workflows/claude-review.yml` — Claude (`anthropics/claude-code-action@v1`) reviews non-draft PRs from this repo and posts PR/inline comments. Needs the `ANTHROPIC_API_KEY` repo secret; skipped for fork PRs (no secrets). Its prompt lists this file's invariants — keep them in sync.
+- `.github/workflows/claude-review.yml` — Claude (`anthropics/claude-code-action@v1`) reviews non-draft PRs from this repo and posts PR/inline comments. Authenticates with a Claude subscription via the `CLAUDE_CODE_OAUTH_TOKEN` repo secret (create with `claude setup-token` or `/install-github-app`); skipped for fork PRs (no secrets). Its prompt lists this file's invariants — keep them in sync.
 - `.github/workflows/deploy.yml` — builds and deploys `main` to GitHub Pages.
 
 ## Environment
