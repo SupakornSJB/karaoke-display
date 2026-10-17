@@ -33,15 +33,11 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            Review this pull request. Read CLAUDE.md first and check the change against its rules,
-            especially:
-            - every sheet-provided URL must go through requestOpenLink() and the confirm modal
-            - the song cache and suggestions localStorage keys must stay separate; never wipe suggestions
-            - song ids must stay content-based (makeSongId), not positional
-            - pure logic belongs in src/lib.js with tests in src/lib.test.js
+            Review this pull request. Read CLAUDE.md first: it is the source of truth for this
+            repo's conventions, and its "Rules for changes" section is your checklist.
 
-            Focus on correctness bugs, security, and missing tests. Skip style nits.
-            If CLAUDE.md is now out of date because of this PR, say so.
+            Focus on correctness bugs, security, rule violations, and missing tests. Skip style nits.
+            If this PR makes CLAUDE.md inaccurate or incomplete, say so.
 
             Note: The PR branch is already checked out in the current working directory.
 

@@ -1,10 +1,9 @@
 name: CI
 
+# PRs only: main can only receive PRs that passed this on an up-to-date branch,
+# and deploy.yml re-runs lint and tests before shipping.
 on:
   pull_request:
-  push:
-    branches:
-      - main
 
 permissions:
   contents: read

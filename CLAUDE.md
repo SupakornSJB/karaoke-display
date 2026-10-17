@@ -2,6 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Rules for changes
+
+These are the repo's invariants. The Claude PR review checks every PR against this list, so update it here (not in the workflow) when a rule changes.
+
+- **Links:** every sheet-provided URL opens only through `requestOpenLink()` and its confirm modal. Never call `window.open` directly.
+- **Storage:** the song cache and suggestions `localStorage` keys stay separate. Nothing may wipe saved suggestions: no `localStorage.clear()`, no prefix scans, and malformed suggestions storage is left untouched.
+- **IDs:** song ids stay content-based via `makeSongId()`, never positional.
+- **File layout:** pure logic goes in `src/lib.js`, network/`localStorage` I/O in `src/storage.js`, UI and state in `src/App.jsx`. New logic in `lib.js`/`storage.js` comes with tests in the matching `*.test.js`.
+- **Checks:** `npm run lint` and `npm test` must pass.
+- **Docs:** if a change makes this file inaccurate (new file, moved function, changed behaviour), update it in the same PR.
+- **Commits:** do not add `Co-Authored-By` trailers to commit messages.
+
 ## Commands
 
 - `npm run dev` — start the Vite dev server
@@ -14,9 +26,9 @@ Tests live next to the code as `*.test.js` and run in Vitest's default Node envi
 
 ## CI
 
-- `.github/workflows/ci.yml` — on every PR and push to `main`: `npm ci`, `npm run lint`, `npm test`, `npm run build`. All steps are blocking.
-- `.github/workflows/claude-review.yml` — Claude (`anthropics/claude-code-action@v1`) reviews non-draft PRs from this repo and posts PR/inline comments. Authenticates with a Claude subscription via the `CLAUDE_CODE_OAUTH_TOKEN` repo secret (create with `claude setup-token` or `/install-github-app`); skipped for fork PRs (no secrets). Its prompt lists this file's invariants — keep them in sync.
-- `.github/workflows/deploy.yml` — builds and deploys `main` to GitHub Pages.
+- `.github/workflows/ci.yml` — on every PR: `npm ci`, `npm run lint`, `npm test`, `npm run build`. All steps are blocking, and its `test` job is a required status check on `main`. It does not run on pushes to `main` — `deploy.yml` re-checks instead.
+- `.github/workflows/claude-review.yml` — Claude (`anthropics/claude-code-action@v1`) reviews non-draft PRs from this repo against the **Rules for changes** above and posts PR/inline comments. Authenticates with a Claude subscription via the `CLAUDE_CODE_OAUTH_TOKEN` repo secret (create with `claude setup-token` or `/install-github-app`); skipped for fork PRs (no secrets). The prompt is deliberately generic — don't edit it to add rules. Any PR that changes this workflow file gets its own review skipped (the action requires the file to match `main`).
+- `.github/workflows/deploy.yml` — on push to `main`: lint, test, then build and deploy to GitHub Pages. A failing check stops the deploy, which covers direct pushes that bypass PRs.
 
 ## Environment
 
@@ -27,7 +39,7 @@ The app requires `VITE_SHEET_URL` (the Google Sheets `gviz` JSON endpoint for a 
 ## Architecture
 
 The app is intentionally small, with three source files:
-- `src/App.jsx` (~470 lines) — **all UI and React state**, and nothing else.
+- `src/App.jsx` — **all UI and React state**, and nothing else.
 - `src/lib.js` — pure, React-free, I/O-free helpers (`safeUrl`, `getLinkWarnings`, `isSafeLink`, `makeSongId`, `parseGviz`, `migrateSuggestions`).
 - `src/storage.js` — the only code that touches the network or `localStorage` (`fetchSongs`, `loadCachedSongs`, `loadSuggestions`, `saveSuggestions`, and the storage keys).
 
@@ -39,7 +51,7 @@ The app is intentionally small, with three source files:
 2. **Shape** — Row 0 of the sheet is skipped (assumed header). Columns A–D map to `name`, `series`, `link`, `lyricsLink`. Rows with an empty name are dropped. IDs are **content-based** via `makeSongId(name, series)`: `JSON.stringify` of the NFC-normalized, whitespace-collapsed, lowercased name and series, so they survive rows being inserted/deleted. Rows with the same normalized name+series get `#2`, `#3`, ... by occurrence order (needed for unique React keys). Consequences: rows differing only in case/spacing count as duplicates, and renaming a song or its series in the sheet changes its id (its star is lost).
 3. **Cache** — Two independent `localStorage` keys:
    - `karaoke-song-cache-v2` — the fetched song list plus `updatedAt` timestamp. Auto-invalidated after `ONE_WEEK_MS` (7 days). `loadCachedSongs()` runs as a lazy `useState` initializer; a fresh-enough cache short-circuits the network fetch. The old `karaoke-song-cache-v1` (positional `s0`, `s1` ids) is removed there by exact key (`LEGACY_CACHE_KEY`). Bump the version again if the song/id shape changes.
-   - `karaoke-suggestions-v1` — the user's starred "Up Next" list (full song objects, never expires). `loadSuggestions()` (lazy `useState` initializer) re-derives each entry's `id` from its stored `name`/`series` (migrating old positional ids) and deduped. Malformed or non-array storage is left untouched rather than overwritten.
+   - `karaoke-suggestions-v1` — the user's starred "Up Next" list (full song objects, never expires). `loadSuggestions()` (lazy `useState` initializer) re-derives each entry's `id` from its stored `name`/`series` (migrating old positional ids) and dedupes them. Malformed or non-array storage is left untouched rather than overwritten.
    These keys are **deliberately separate** so that clearing/expiring the song cache never wipes the user's saved suggestions. Never clear storage by prefix scan or `localStorage.clear()`. Keep this invariant if you touch storage.
    Starred state (`suggestedIds`) is matched by `id`. A starred song that is removed or renamed in the sheet stays in Up Next (removable from its chip) but shows no star in the list.
 4. **Render** — `filtered` (memoized) applies the search query + filter mode, then re-sorts so starred songs bubble to the top while preserving original order within each group.
